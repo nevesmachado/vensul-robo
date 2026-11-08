@@ -1,0 +1,15 @@
+{
+  "name": "vensul-robo",
+  "private": true,
+  "type": "module",
+  "description": "Robô de dados do VenSul: raios do GOES-19, vento nos aeroportos, alertas do Inmet e previsão do GFS",
+  "scripts": {
+    "vivo": "node vivo.mjs"
+  },
+  "dependencies": {
+    "h5wasm": "0.7.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
