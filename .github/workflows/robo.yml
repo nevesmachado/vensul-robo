@@ -1,0 +1,45 @@
+name: robo
+
+# Robô de dados do VenSul.
+#  - a cada 5 min: raios do satélite, vento nos aeroportos e alertas do Inmet ("vivo")
+#  - a cada hora: confere se saiu rodada nova do GFS e, se saiu, manda a previsão
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+    - cron: '20 * * * *'
+  workflow_dispatch:
+    inputs:
+      parte:
+        description: 'vivo, previsao ou tudo'
+        default: tudo
+
+jobs:
+  vivo:
+    if: github.event.schedule == '*/5 * * * *' || (github.event_name == 'workflow_dispatch' && inputs.parte != 'previsao')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency: { group: vivo, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: node vivo.mjs
+        env:
+          ROBO_URL: ${{ secrets.ROBO_URL }}
+          ROBO_KEY: ${{ secrets.ROBO_KEY }}
+
+  previsao:
+    if: github.event.schedule == '20 * * * *' || (github.event_name == 'workflow_dispatch' && inputs.parte != 'vivo')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency: { group: previsao, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python previsao.py
+        env:
+          ROBO_URL: ${{ secrets.ROBO_URL }}
+          ROBO_KEY: ${{ secrets.ROBO_KEY }}
