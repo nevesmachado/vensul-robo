@@ -1,11 +1,15 @@
 name: robo
 
 # Robô de dados do VenSul.
-#  - a cada 5 min: raios do satélite, vento nos aeroportos e alertas do Inmet ("vivo")
-#  - a cada hora: confere se saiu rodada nova do GFS e, se saiu, manda a previsão
+#  - "vivo": raios do satélite, vento nos aeroportos e alertas do Inmet
+#  - "previsao": confere se saiu rodada nova do GFS e, se saiu, manda a previsão
+# Quem chama o robô a cada 5 min é a Cloudflare (Cron Trigger no worker do site), pela API do GitHub.
+# Os agendamentos abaixo são o despertador reserva: se a Cloudflare falhar e os dados ficarem
+# velhos (mais de 20 min), o próprio GitHub roda o robô. A Cloudflare religa este agendamento
+# todo dia, para o GitHub não desligá-lo depois de 60 dias sem commits.
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/10 * * * *'
     - cron: '20 * * * *'
   workflow_dispatch:
     inputs:
@@ -15,16 +19,31 @@ on:
 
 jobs:
   vivo:
-    if: github.event.schedule == '*/5 * * * *' || (github.event_name == 'workflow_dispatch' && inputs.parte != 'previsao')
+    if: github.event.schedule == '*/10 * * * *' || (github.event_name == 'workflow_dispatch' && inputs.parte != 'previsao')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     concurrency: { group: vivo, cancel-in-progress: false }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # no agendamento reserva, só trabalha se os dados do site estiverem velhos
+      - name: Os dados estão em dia?
+        id: idade
+        if: github.event_name == 'schedule'
+        run: |
+          GERADO=$(curl -fsS "$ROBO_URL/dados/vivo" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).gerado||0)}catch{console.log(0)}})" || echo 0)
+          IDADE=$(( ( $(date +%s%3N) - GERADO ) / 60000 ))
+          echo "dados de $IDADE min atrás"
+          if [ "$IDADE" -le 20 ]; then echo "pular=1" >> "$GITHUB_OUTPUT"; fi
+        env:
+          ROBO_URL: ${{ secrets.ROBO_URL }}
+      - if: steps.idade.outputs.pular != '1'
+        uses: actions/checkout@v4
+      - if: steps.idade.outputs.pular != '1'
+        uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
-      - run: npm ci
-      - run: node vivo.mjs
+      - if: steps.idade.outputs.pular != '1'
+        run: npm ci
+      - if: steps.idade.outputs.pular != '1'
+        run: node vivo.mjs
         env:
           ROBO_URL: ${{ secrets.ROBO_URL }}
           ROBO_KEY: ${{ secrets.ROBO_KEY }}
